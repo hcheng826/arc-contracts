@@ -2,7 +2,7 @@
 
 ## Contracts
 
-### Vault.sol
+### LendingVault.sol
 - One instance for entire protocol
 - ERC20 contract
 - Lenders put FIL to this contract (and get something like aFIL. like rETH for rocket protocol)
