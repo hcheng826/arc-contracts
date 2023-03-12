@@ -5,6 +5,9 @@ contract LendingVault {
     // deposit FIL and get aFIL
     function deposit() external payable {}
 
-    // redeem FIL with aFIL
+    // pay aFIL to redeem FIL
     function withdraw(uint256 withdrawAmount) external {}
+
+    // transfer the FIL to LoanAgent as loan to start the node
+    function loan() external {}
 }

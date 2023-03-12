@@ -22,6 +22,15 @@
 - Oracle DAO will read the node data, construct Merkle root and submit the value to the contrat and the contract will record counts for each value, > 50% to make it valid data
 - Record the gas consumptions for legit oracle iteractions
 
+## Operations process
+### Start a mining node with loan
+1. Miner deploy LoanAgent contract with correct address for LendingVault and Oracle
+2. Miner deposit the collateral to (LoanAgent or LendingVault, to be discussed)
+3. Miner submit a request for loan (off-chain)
+4. Oracle DAO members will review the LoanAgent is set up, the collateral is sent and vote on Oracle contract
+### Oracle submit reward data
+
 ## Reference
+- Blueprint design from filecoin doc: https://docs.filecoin.io/developers/smart-contracts/about/blueprints/#lending-pool
 - Addresses in Filecoin (owner address, worker address, control address, etc): https://lotus.filecoin.io/storage-providers/operate/addresses/
 - MinerAPI (solidity contract for Actors-related APIs): https://docs.zondax.ch/fevm/filecoin-solidity/api/actors/Miner
