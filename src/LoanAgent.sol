@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-contract LoadAgent {
+contract LoanAgent {
     struct AddressInfo {
         address miner;
         address realOwner;

@@ -2,12 +2,19 @@
 pragma solidity ^0.8.13;
 
 contract LoadAgentFactory {
-    enum LoanRequestStatus{ PENDING, APPROVED, REJECTED }
     mapping(address => bool) registeredLoanAgents;
 
+    // miner will deploy LoanAgent with partial pledge for the node
+    function deployLoanAgent() external payable returns (address) {}
+
+    function registerNewAgents(address[] calldata agents) external onlyOracle {}
+
+    // ==== Loan request related ====
     modifier onlyOracle {
         _;
     }
+
+    enum LoanRequestStatus{ PENDING, APPROVED, REJECTED }
 
     struct LoanRequest {
         address miner;
@@ -22,14 +29,12 @@ contract LoadAgentFactory {
         LoanRequestStatus status;
     }
 
-    LoanRequest[] loanRequestQueue;
-    // called by Oracle contract can call this, transfer the loan to the LoanAgent contract
-    // apply CREATE2 so the contract address can be known beforehand
-    function deployLoanAgent() external {}
 
+    LoanRequest[] loanRequestQueue;
+
+    // consider to move the loan request to oracle?
     function addLoanRequest(LoanRequest calldata request) external payable {}
 
     // Can be called either by oracle contract or request owner.
     function removeLoanRequest(address agent) external {}
-    function registerNewAgents(address[] calldata agents) external onlyOracle {}
 }
