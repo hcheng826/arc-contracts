@@ -56,10 +56,25 @@ contract LoadAgent {
     // should be called using LoanAgentFactory
     constructor(
         AddressInfo memory _addressInfo,
-        LoanAgentInfo memory _loanAgentInfo
+        LoanAgentInfo memory _loanAgentInfo,
+        address _factory
     ) {
         // Call ChangeWorkerAddress in MinerAPI: https://docs.zondax.ch/fevm/filecoin-solidity/api/actors/Miner#changeworkeraddress
+        factory = _factory;
     }
+
+    modifier onlyFactory {
+        _;
+    }
+
+    modifier onlyOracle {
+        _;
+    }
+
+    modifier onlyRealOwner {
+        _;
+    }
+
 
     // withdraw the funds from the Miner actor to this contract
     function withdrawBalacne() external {}
@@ -73,7 +88,7 @@ contract LoadAgent {
     // miner can repay the loan and change the owner to itself, LoanAgent will selfdestruct and transfer the funds to LendingVault
     function repayLoanAndChangeOwner(address ownerAddress) external {}
 
-    function changeOwnerBackToReal() external;
+    function changeOwnerBackToReal() external {}
 
     function getBalanceInfo()
         external
@@ -82,24 +97,24 @@ contract LoadAgent {
             uint256 availableBalance,
             uint256 lockedReward,
             uint256 initialPledgeCollateral
-        );
+        ) {}
 
     function getStakeInfo()
         external
         view
-        returns (uint256 nodeOnwerStakes, uint256 usersStakes);
+        returns (uint256 nodeOnwerStakes, uint256 usersStakes) {}
 
-    function getNodeOwner() external view returns (address);
+    function getNodeOwner() external view returns (address) {}
 
     // Can only be callled by oracle contract or stakepool factory
-    function updateNodeStatus(NodeStatus status) external;
+    function updateNodeStatus(NodeStatus status) external {}
 
     function destructStakePool() external onlyFactory {}
 
     // Can only be called by oracle contract and before status == NodeStatus.Active
     // get pledged collateral, calculate residual FIL in the wallet after pledging,
     // refund the amounts according to the collateral shares and update nodeOwnerStakes and usersStakes
-    function verifyAndRefundUnpledgedCollateral() external;
+    function verifyAndRefundUnpledgedCollateral() external {}
 
     // Withdraw earnings from the available balance
     // Only the oracle smart contract can call this function
@@ -112,7 +127,7 @@ contract LoadAgent {
         uint256 minerShare,
         uint256 usersShare,
         uint256 oracleShare
-    ) external onlyOracleContract {}
+    ) external onlyOracle {}
 
     // The amount that realOwner can withdraw anytime.
     // The amount must be less than totalOwnerCredit and available balance.
