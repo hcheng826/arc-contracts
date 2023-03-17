@@ -12,4 +12,13 @@ remappings = [
 
 solc_version = '0.8.13'
 
+[fuzz]
+runs = 10000
+max_test_rejects = 60000
+
+[profile.intense.fuzz]
+verbosity = 3
+runs = 100000
+max_test_rejects = 600000
+
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
