@@ -87,6 +87,11 @@ contract TestOracleInDAO is Test {
         vm.stopPrank();
     }
 
+    function test_getOracles() public {
+        address[] memory oracles = oracle.getOracles();
+        assertEq(oracles.length, 3);
+    }
+
     function test_submitSentinelDataSubmission() public  {
         vm.expectEmit(true, true, true, false);
         emit SentinelDataSubmitted(address(this), 27, block.number);

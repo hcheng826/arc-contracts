@@ -2,16 +2,21 @@
 pragma solidity ^0.8.13;
 import "./Ownable.sol";
 import "forge-std/console2.sol";
+import "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
 
 contract Oracle is Ownable {
+
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     event SentinelDataSubmitted(address indexed oracle, uint256 indexed height, uint256 indexed currentHeight);
     event SentinelDataUpdated(uint256 indexed height, uint256 indexed currentHeight);
 
     event OracleAdded(address indexed oracle, uint256 indexed oracleCount);
 
-    mapping(address => bool) public isRegisterdOracle;
-    uint256 public totalRegisterdOracles;
+    EnumerableSet.AddressSet private oracles;
+
+    // mapping(address => bool) public isRegisterdOracle;
+    // uint256 public totalRegisterdOracles;
     uint8 public quorum = 51;
 
 
@@ -34,14 +39,23 @@ contract Oracle is Ownable {
     // This is used to schedule the next sentinel data feed and has no use for real data
     uint256 currentSentinelFeedBlock;
 
+    function isRegisterdOracle(address oracle) public view returns(bool) {
+        return oracles.contains(oracle);
+    }
+
+    function totalRegisterdOracles() public view returns(uint256) {
+        return oracles.length();
+    }
+
+
     modifier onlyOracle {
-        require(isRegisterdOracle[msg.sender], "Unknown source");
+        require(isRegisterdOracle(msg.sender), "Unknown source");
         _;
     }
 
 
     function getThresholdVoteCount() public view returns(uint256) {
-        return totalRegisterdOracles * quorum;
+        return totalRegisterdOracles() * quorum;
     }
 
     function isPassingThresholdVoteCount(uint256 vote) internal view returns(bool) {
@@ -49,16 +63,19 @@ contract Oracle is Ownable {
     }
 
     function _registerOracle(address oracle) internal {
-        require(!isRegisterdOracle[oracle], "Oracle already registered");
-        isRegisterdOracle[oracle] = true;
-        totalRegisterdOracles = totalRegisterdOracles + 1;
-        emit OracleAdded(oracle, totalRegisterdOracles);
+        require(!isRegisterdOracle(oracle), "Oracle already registered");
+        oracles.add(oracle);
+        emit OracleAdded(oracle, totalRegisterdOracles());
+    }
+
+    function getOracles() external view returns(address[] memory) {
+        return oracles.values();
     }
 
     /// Register oracle on contract owner's command
     /// Maximum 3 oracles can be added by owners to seed the protocol
     function registerOracleThroughOwner(address oracle) external onlyOwner {
-        require(totalRegisterdOracles < 3, "Privilege exhausted");
+        require(totalRegisterdOracles() < 3, "Privilege exhausted");
         _registerOracle(oracle);
     }
 
