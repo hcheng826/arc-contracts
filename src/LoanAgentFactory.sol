@@ -14,8 +14,6 @@ contract LoadAgentFactory {
         _;
     }
 
-    enum LoanRequestStatus{ PENDING, APPROVED, REJECTED }
-
     struct LoanRequest {
         address miner;
         address owner;
@@ -26,7 +24,6 @@ contract LoadAgentFactory {
         uint256 pledgeAmount;
         uint256 timeCommitement;
         uint256 requestCreationTimestamp;
-        LoanRequestStatus status;
     }
 
 

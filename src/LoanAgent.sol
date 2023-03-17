@@ -41,6 +41,7 @@ contract LoanAgent {
 
     enum NodeStatus {
         InQueue,
+        WaitingForPledge,
         WaitingForOwnerChange,
         WaitingForOracleVerifiction,
         Active,
