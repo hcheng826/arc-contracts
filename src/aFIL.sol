@@ -8,23 +8,17 @@ error InsufficientTokenAvailable(uint availableAmount, uint requestAmount);
 
 contract aFIL is ERC20 {
     uint public totalLoanAmount;
-    address public immutable oracle;
+    address public immutable loanAgentFactory;
 
-    constructor(address _oracle) ERC20("arc FIL", "aFIL") {
-        oracle = _oracle;
+    constructor(address _loanAgentFactory) ERC20("arc FIL", "aFIL") {
+        loanAgentFactory = _loanAgentFactory;
     }
 
-    struct Loan {
-        LoanAgent loanAgent;
-        uint totalAmount;
-        uint expectFinishTime;
-        uint remainingAmount;
-    }
-
-    mapping (address => Loan) loans;
-
-    modifier onlyOracle() {
-        require(msg.sender == oracle, "Only oracle can call this function");
+    modifier onlyLoanAgentFactory() {
+        require(
+            msg.sender == loanAgentFactory,
+            "Only oracle can call this function"
+        );
         _;
     }
 
@@ -65,10 +59,9 @@ contract aFIL is ERC20 {
     }
 
     // transfer FIL to loanAgent and record the loan data
-    function loan(address payable loanAgent, Loan calldata _loan) external onlyOracle {
-        if (loanAgent.send(_loan.totalAmount)) {
-            totalLoanAmount += _loan.totalAmount;
-            loans[loanAgent] = _loan;
+    function loan(address loanAgent, uint loanAmount) external onlyLoanAgentFactory {
+        if (payable(loanAgent).send(loanAmount)) {
+            totalLoanAmount += loanAmount;
         }
     }
 }
