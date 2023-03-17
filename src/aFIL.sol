@@ -2,25 +2,30 @@
 pragma solidity ^0.8.13;
 
 import "openzeppelin-contracts/token/ERC20/ERC20.sol";
-import "openzeppelin-contracts/utils/math/Math.sol";
 import "./LoanAgent.sol";
 
 error InsufficientTokenAvailable(uint availableAmount, uint requestAmount);
 
 contract aFIL is ERC20 {
-    uint totalLoanAmount;
+    uint public totalLoanAmount;
+    address public immutable oracle;
 
-    constructor() ERC20("arc FIL", "aFIL") {}
-
-    modifier onlyOracle() {
-        _;
+    constructor(address _oracle) ERC20("arc FIL", "aFIL") {
+        oracle = _oracle;
     }
 
     struct Loan {
         LoanAgent loanAgent;
-        uint loanAmount;
-        uint finishTime;
+        uint totalAmount;
+        uint expectFinishTime;
         uint remainingAmount;
+    }
+
+    mapping (address => Loan) loans;
+
+    modifier onlyOracle() {
+        require(msg.sender == oracle, "Only oracle can call this function");
+        _;
     }
 
     function depositFIL() public payable {
@@ -60,5 +65,10 @@ contract aFIL is ERC20 {
     }
 
     // transfer FIL to loanAgent and record the loan data
-    function loan(address payable loanAgent, uint amount) external onlyOracle {}
+    function loan(address payable loanAgent, Loan calldata _loan) external onlyOracle {
+        if (loanAgent.send(_loan.totalAmount)) {
+            totalLoanAmount += _loan.totalAmount;
+            loans[loanAgent] = _loan;
+        }
+    }
 }
