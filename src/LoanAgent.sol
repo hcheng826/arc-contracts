@@ -1,44 +1,33 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.0;
+
+import "filecoin-solidity/MinerAPI.sol";
+import "filecoin-solidity/types/CommonTypes.sol";
+import "filecoin-solidity/utils/FilAddresses.sol";
+import "filecoin-solidity/utils/BigInts.sol";
 
 contract LoanAgent {
+    uint public constant WEI_DENOMINATOR = 1e18;
     struct AddressInfo {
         address miner;
         address realOwner;
         address oracle;
+        CommonTypes.FilActorId filActorId; // does this variable the same as "miner"?
     }
-
-    AddressInfo public addressInfo;
 
     struct LoanAgentInfo {
-        uint256 nodeOwnerStakes;
-        uint256 usersStakes;
-        uint256 poolExpectedExpiry;
-        uint256 rawBytePower;
-        uint256 poolCreationTimestamp;
-        uint24 interestRate;
+        uint nodeOwnerStakes;
+        uint usersStakes;
+        uint agentExpectedExpiry;
+        uint rawBytePower;
+        uint agentCreationTimestamp;
         // Amount that the miner has to return (usersStake + interestRateForPeriod)
-        uint256 expectedReturnAmount;
-        uint24 nodeOwnerCollateralStakes;
+        uint expectedReturnAmount;
+        uint lastUpdateDebtTimstamp;
+        uint24 interestRate;
     }
 
-    // Amount that the miner has returned to protocol till now
-    /// updated by withdrawBalance function
-    // if totalReturnedAmount == expectedReturnAmount (changeOwner of the miner and terminate the stakepool)
-    uint256 totalReturnedAmount;
-
-    LoanAgentInfo public loanAgentInfo;
-
-    /// checkpoint => withdrawnAmount
-    mapping(uint256 => uint256) withdrawHistory;
-    /// checkpoint => available balance after withdrawl
-    mapping(uint256 => uint256) availableBalanceHistory;
-    // checkpoint => miner share
-    mapping(uint256 => uint256) ownerWithrawableAmount;
-    // total amount of miner share accummulated
-    uint256 totalOwnerCredit;
-    uint256 lastWithdrawlCheckpoint;
-
+    // TODO: add status modifiers check to different functions
     enum NodeStatus {
         InQueue,
         WaitingForPledge,
@@ -49,73 +38,166 @@ contract LoanAgent {
         Terminated
     }
 
+    AddressInfo public addressInfo;
     NodeStatus public status;
+    LoanAgentInfo public loanAgentInfo;
 
-    // Stakepool factory
+    /// checkpoint => withdrawnAmount
+    mapping(uint => uint) withdrawHistory;
+    /// checkpoint => available balance after withdrawal
+    mapping(uint => uint) availableBalanceHistory;
+    // checkpoint => miner share
+    mapping(uint => uint) ownerWithrawableAmount;
+    // total amount of miner share accummulated
+    uint totalOwnerCredit;
+    uint lastWithdrawlCheckpoint;
+
     address public immutable factory;
+    address public immutable aFil;
 
-    // should be called using LoanAgentFactory
     constructor(
         AddressInfo memory _addressInfo,
         LoanAgentInfo memory _loanAgentInfo,
-        address _factory
+        address _factory,
+        address _aFil
     ) {
-        // Call ChangeWorkerAddress in MinerAPI: https://docs.zondax.ch/fevm/filecoin-solidity/api/actors/Miner#changeworkeraddress
+        addressInfo = _addressInfo;
+        loanAgentInfo = _loanAgentInfo;
         factory = _factory;
+        aFil = _aFil;
+        status = NodeStatus.InQueue;
     }
 
-    modifier onlyFactory {
+    modifier onlyFactory() {
+        require(msg.sender == factory, "can only be called by factory");
         _;
     }
 
-    modifier onlyOracle {
+    modifier onlyOracle() {
+        require(
+            msg.sender == addressInfo.oracle,
+            "can only be called by oracle"
+        );
         _;
     }
 
-    modifier onlyRealOwner {
+    modifier onlyOracleOrFactory() {
+        require(
+            msg.sender == addressInfo.oracle || msg.sender == factory,
+            "can only be called by oracle"
+        );
         _;
     }
 
-
-    // withdraw the funds from the Miner actor to this contract
-    function withdrawBalacne() external {}
-
-    // transfer the reward from this contract to LendingVault, Miner, Oracle, respectively
-    function distributeReward() external {}
+    modifier onlyRealOwner() {
+        require(
+            msg.sender == addressInfo.realOwner,
+            "can only be called by real owner"
+        );
+        _;
+    }
 
     // Only called by miner address
-    function changeWorker(address newWorkerAddress) external {}
+    function changeWorker(
+        address worker,
+        address[] calldata controlAddresses
+    ) external onlyRealOwner {
+        CommonTypes.FilAddress[]
+            memory controlFilAddrresses = new CommonTypes.FilAddress[](
+                controlAddresses.length
+            );
+        for (uint i = 0; i < controlAddresses.length; ) {
+            controlFilAddrresses[i] = FilAddresses.fromEthAddress(
+                controlAddresses[i]
+            );
+            unchecked {
+                i++;
+            }
+        }
+        MinerAPI.changeWorkerAddress(
+            addressInfo.filActorId,
+            MinerTypes.ChangeWorkerAddressParams({
+                new_worker: FilAddresses.fromEthAddress(worker),
+                new_control_addresses: controlFilAddrresses
+            })
+        );
+    }
 
-    // miner can repay the loan and change the owner to itself, LoanAgent will selfdestruct and transfer the funds to LendingVault
-    function repayLoanAndChangeOwner(address ownerAddress) external {}
+    // miner can repay the loan and change the owner to itself
+    function repayLoanAndChangeOwner() external payable onlyRealOwner {
+        accumulateDebt();
+        uint expectedReturnAmount = loanAgentInfo.expectedReturnAmount;
+        require(
+            msg.value + totalOwnerCredit >= expectedReturnAmount,
+            "Insufficient repay amount"
+        );
+        require(
+            payable(aFil).send(expectedReturnAmount),
+            "Fail to return users stakes to aFIL"
+        );
 
-    function changeOwnerBackToReal() external {}
+        address realOwner = addressInfo.realOwner;
+        MinerAPI.changeOwnerAddress(
+            addressInfo.filActorId,
+            FilAddresses.fromEthAddress(realOwner)
+        );
+
+        require(
+            payable(realOwner).send(address(this).balance),
+            "Fail to return remaining balance to real owner"
+        );
+        totalOwnerCredit = 0;
+        status = NodeStatus.Terminated;
+    }
 
     function getBalanceInfo()
         external
-        view
         returns (
-            uint256 availableBalance,
-            uint256 lockedReward,
-            uint256 initialPledgeCollateral
-        ) {}
+            // view // somehow these get functions in MinerAPI is not `view`
+            CommonTypes.BigInt memory availableBalance,
+            uint initialPledgeCollateral,
+            MinerTypes.GetVestingFundsReturn memory lockedReward
+        )
+    {
+        availableBalance = MinerAPI.getAvailableBalance(addressInfo.filActorId);
+        initialPledgeCollateral = loanAgentInfo.nodeOwnerStakes;
+        lockedReward = MinerAPI.getVestingFunds(addressInfo.filActorId);
+    }
 
     function getStakeInfo()
         external
         view
-        returns (uint256 nodeOnwerStakes, uint256 usersStakes) {}
+        returns (uint nodeOnwerStakes, uint usersStakes)
+    {
+        nodeOnwerStakes = loanAgentInfo.nodeOwnerStakes;
+        usersStakes = loanAgentInfo.usersStakes;
+    }
 
-    function getNodeOwner() external view returns (address) {}
+    function getNodeOwner()
+        external
+        returns (
+            // view // somehow these get functions in MinerAPI is not `view`
+            MinerTypes.GetOwnerReturn memory
+        )
+    {
+        return MinerAPI.getOwner(addressInfo.filActorId);
+    }
 
-    // Can only be callled by oracle contract or stakepool factory
-    function updateNodeStatus(NodeStatus status) external {}
-
-    function destructStakePool() external onlyFactory {}
+    // Can only be callled by oracle contract or loanAgent factory
+    function updateNodeStatus(NodeStatus _status) external onlyOracleOrFactory {
+        status = _status;
+    }
 
     // Can only be called by oracle contract and before status == NodeStatus.Active
     // get pledged collateral, calculate residual FIL in the wallet after pledging,
     // refund the amounts according to the collateral shares and update nodeOwnerStakes and usersStakes
-    function verifyAndRefundUnpledgedCollateral() external {}
+    function verifyAndRefundUnpledgedCollateral() external onlyOracle {
+        require(
+            status != NodeStatus.Active,
+            "Can only be called before the node is active"
+        );
+        // TODO: implementation
+    }
 
     // Withdraw earnings from the available balance
     // Only the oracle smart contract can call this function
@@ -124,14 +206,62 @@ contract LoanAgent {
     // The minerShare won't be withdrawn and the amount will be added in totalMinerCredit which the miner can withdraw anytime
     // update availableBalanceHistory, withdrawHistory and lastWithdrawlCheckpoint
     function withdrawEarnings(
-        uint256 checkpoint,
-        uint256 minerShare,
-        uint256 usersShare,
-        uint256 oracleShare
-    ) external onlyOracle {}
+        uint checkpoint,
+        uint minerShare,
+        uint usersShare,
+        uint oracleShare
+    ) external onlyOracle {
+        CommonTypes.BigInt memory availableBalance = MinerAPI.getAvailableBalance(
+            addressInfo.filActorId
+        );
+        require(
+            !availableBalance.neg,
+            "availableBalance must be positive to withdraw"
+        );
+        MinerAPI.withdrawBalance(addressInfo.filActorId, availableBalance);
+        // TODO: implementation
+    }
 
     // The amount that realOwner can withdraw anytime.
     // The amount must be less than totalOwnerCredit and available balance.
     // The withdrawal will update totalOwnerCredit, availableBalanceHistory
-    function withdrawMinerEarning(uint256 amount) external onlyRealOwner {}
+    function withdrawMinerEarning(uint amount) external onlyRealOwner {
+        accumulateDebt();
+        require(
+            amount <= totalOwnerCredit,
+            "cannot withdraw more than totalOwnerCredit"
+        );
+        (uint availableBalance, bool _neg) = BigInts.toUint256(
+            MinerAPI.getAvailableBalance(addressInfo.filActorId)
+        );
+        require(
+            amount <= availableBalance,
+            "cannot withdraw more than availableBalance"
+        );
+
+        totalOwnerCredit -= amount;
+
+        // Q: what would be the expected `lastWithdrawlCheckpoint` here? block.timestamp?
+        availableBalanceHistory[lastWithdrawlCheckpoint] =
+            availableBalance -
+            amount;
+        require(
+            payable(addressInfo.realOwner).send(amount),
+            "fail to transfer to real owner"
+        );
+    }
+
+    function accumulateDebt() private {
+        uint expectedReturnAmount = loanAgentInfo.expectedReturnAmount;
+        uint incrementalDebt = ((expectedReturnAmount *
+            loanAgentInfo.interestRate) / WEI_DENOMINATOR) *
+            (block.timestamp - loanAgentInfo.lastUpdateDebtTimstamp);
+        expectedReturnAmount += incrementalDebt;
+        loanAgentInfo.lastUpdateDebtTimstamp = block.timestamp;
+    }
+
+    function updateInterestRate(uint24 _interestRate) external onlyOracle {
+        accumulateDebt();
+        loanAgentInfo.interestRate = _interestRate;
+    }
 }

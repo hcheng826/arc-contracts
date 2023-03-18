@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.13;
+pragma solidity ^0.8.0;
 import "./LoanAgent.sol";
 import "./aFIL.sol";
 import "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
+import "filecoin-solidity/MinerAPI.sol";
 
 contract LoadAgentFactory {
     uint16 public constant ONE_HUNDRED_DENOMINATOR = 100;
@@ -45,6 +46,7 @@ contract LoadAgentFactory {
         uint256 pledgeAmount;
         uint256 timeCommitement;
         uint256 requestCreationTimestamp;
+        CommonTypes.FilActorId filActorId;
     }
 
     // called by anyone
@@ -53,41 +55,43 @@ contract LoadAgentFactory {
             msg.sender == request.owner,
             "can only add request with itself as request owner"
         );
+
+        uint oracleFee = (msg.value * oracleFeePercentage) /
+            ONE_HUNDRED_DENOMINATOR;
+        uint initialPledge = msg.value - oracleFee;
+
         LoanAgent.AddressInfo memory addressInfo = LoanAgent.AddressInfo({
             miner: request.miner,
             realOwner: request.owner,
-            oracle: oracle
+            oracle: oracle,
+            filActorId: request.filActorId
         });
 
         LoanAgent.LoanAgentInfo memory loanAgentInfo = LoanAgent.LoanAgentInfo({
             nodeOwnerStakes: request.pledgeAmount,
             usersStakes: 0,
-            poolExpectedExpiry: block.timestamp + request.timeCommitement,
+            agentExpectedExpiry: block.timestamp + request.timeCommitement,
             rawBytePower: request.rawBytesPower,
-            poolCreationTimestamp: block.timestamp,
-            interestRate: 0, // Set the interest rate
-            expectedReturnAmount: 0, // Set the expected return amount
-            nodeOwnerCollateralStakes: 0 // Set the node owner collateral stakes
+            agentCreationTimestamp: block.timestamp,
+            expectedReturnAmount: 0, // TODO: Set the expected return amount
+            lastUpdateDebtTimstamp: 0,
+            interestRate: 0 // TODO: Set the interest rate
         });
 
         LoanAgent loanAgent = new LoanAgent(
             addressInfo,
             loanAgentInfo,
-            address(this)
+            address(this),
+            aFil
         );
 
         require(
-            payable(oracle).send(
-                (msg.value * oracleFeePercentage) / ONE_HUNDRED_DENOMINATOR
-            ),
+            payable(oracle).send(oracleFee),
             "should send FIL to oracle successfully"
         );
 
         require(
-            payable(address(loanAgent)).send(
-                (msg.value * (ONE_HUNDRED_DENOMINATOR - oracleFeePercentage)) /
-                    ONE_HUNDRED_DENOMINATOR
-            ),
+            payable(address(loanAgent)).send(initialPledge),
             "should send FIL to loanAgent successfully"
         );
         agentsInQueue.add(address(loanAgent));
@@ -118,6 +122,7 @@ contract LoadAgentFactory {
             aFIL(aFil).loan(agents[i], loanAmount[i]);
             agentsInQueue.remove(agents[i]);
             acceptedInActiveAgents.add(agents[i]);
+            LoanAgent(agents[i]).updateNodeStatus(LoanAgent.NodeStatus.Active);
             unchecked {
                 i++;
             }
