@@ -5,3 +5,7 @@
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
 	branch = v4.8.2
+[submodule "lib/filecoin-solidity"]
+	path = lib/filecoin-solidity
+	url = https://github.com/Zondax/filecoin-solidity
+	branch = v4.0.2
