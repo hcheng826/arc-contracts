@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 import "./Ownable.sol";
-import "forge-std/console2.sol";
 import "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
 
 contract Oracle is Ownable {

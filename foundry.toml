@@ -4,12 +4,6 @@ out = 'out'
 test = 'test'
 libs = ['lib']
 
-remappings = [
-    'ds-test/=lib/forge-std/lib/ds-test/src/',
-    'forge-std/=lib/forge-std/src/',
-    'openzeppelin-contracts/=lib/openzeppelin-contracts/'
-]
-
 solc_version = '0.8.13'
 
 [fuzz]
