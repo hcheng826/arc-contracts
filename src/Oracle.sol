@@ -36,7 +36,10 @@ contract Oracle is Ownable {
     SentinelData public sentinelData;
     // block number at which consensus was achieved to update the sentinel data
     // This is used to schedule the next sentinel data feed and has no use for real data
-    uint256 currentSentinelFeedBlock;
+    uint256 public currentSentinelFeedBlock;
+
+    uint24 public averageInterestRate = 19 * 1e4;
+    uint24 public interestUpdateBlock;
 
     function isRegisterdOracle(address oracle) public view returns(bool) {
         return oracles.contains(oracle);
@@ -102,6 +105,10 @@ contract Oracle is Ownable {
         sentinelData = data;
         currentSentinelFeedBlock = block.number;
         emit SentinelDataUpdated(data.height, currentSentinelFeedBlock);
+    }
+
+    function submitAverageInterestRate(uint256 height, uint24 _averageInterestRate) external onlyOracle {
+        ///TODO: Update average interest rate
     }
 
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.13;
 import "./LoanAgent.sol";
 import "./aFIL.sol";
+import "./Oracle.sol";
 import "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
 
 contract LoadAgentFactory {
@@ -13,11 +14,15 @@ contract LoadAgentFactory {
     address public immutable aFil;
     uint16 public immutable oracleFeePercentage;
 
+    event LoanAgentStatusChange(address indexed agent, LoanAgent.NodeStatus indexed status, uint256 indexed block);
+
     EnumerableSet.AddressSet private agentsInQueue;
     EnumerableSet.AddressSet private acceptedInActiveAgents;
     EnumerableSet.AddressSet private activeAgents;
 
-    mapping(address => LoanRequest) loanAgents;
+    mapping(address => LoanRequest) loanAgentRequests;
+
+    uint32 public constant minerValidationDeadlineAtEachStatus = 3 days;
 
     constructor(address _oracle, address _aFil, uint16 _oracleFeePercentage) {
         oracle = _oracle;
@@ -38,6 +43,7 @@ contract LoadAgentFactory {
     struct LoanRequest {
         address miner;
         address owner;
+        address oracle;
         address requestOwner;
         uint256 rawBytesPower;
         // miner will transfer 10% extra amount for rate changes
@@ -45,6 +51,26 @@ contract LoadAgentFactory {
         uint256 pledgeAmount;
         uint256 timeCommitement;
         uint256 requestCreationTimestamp;
+    }
+
+
+    function isStatusExpired(uint256 timestamp) internal view {
+        require(block.timestamp - timestamp <= minerValidationDeadlineAtEachStatus,
+            "Timeout"
+        );
+    }   
+
+
+    function getAgentsInQueue() external view returns(address[] memory) {
+        return agentsInQueue.values();
+    }
+
+    function getAcceptedInActiveAgents() external view returns(address[] memory) {
+        return acceptedInActiveAgents.values();
+    }
+
+    function getActiveAgents() external view returns(address[] memory) {
+        return activeAgents.values();
     }
 
     // called by anyone
@@ -56,8 +82,9 @@ contract LoadAgentFactory {
         LoanAgent.AddressInfo memory addressInfo = LoanAgent.AddressInfo({
             miner: request.miner,
             realOwner: request.owner,
-            oracle: oracle
+            oracle: request.oracle
         });
+
 
         LoanAgent.LoanAgentInfo memory loanAgentInfo = LoanAgent.LoanAgentInfo({
             nodeOwnerStakes: request.pledgeAmount,
@@ -91,19 +118,22 @@ contract LoadAgentFactory {
             "should send FIL to loanAgent successfully"
         );
         agentsInQueue.add(address(loanAgent));
-        loanAgents[address(loanAgent)] = request;
+        loanAgentRequests[address(loanAgent)] = request;
+        _updateNodeStatus(address(loanAgent), LoanAgent.NodeStatus.InQueue);
+
     }
 
     // Can be called either by oracle contract or request owner.
     function removeLoanRequest(address agent) external {
         require(agentsInQueue.contains(agent), "Agent not in the queue");
         require(
-            msg.sender == loanAgents[agent].requestOwner,
+            msg.sender == loanAgentRequests[agent].requestOwner,
             "only request owner can remove request"
         );
         agentsInQueue.remove(agent);
         // TODO: call selfdestruct in LoanAgent and return the FIL to request owner (deduct fee)
     }
+
 
     // after oracle review the request and approved, call this
     function registerNewAgents(
@@ -122,5 +152,71 @@ contract LoadAgentFactory {
                 i++;
             }
         }
+    }
+
+    function _updateNodeStatus(address agent, LoanAgent.NodeStatus status) internal {
+        LoanAgent(agent).updateNodeStatus(status);
+        emit LoanAgentStatusChange(agent, status, block.number);
+    }
+
+
+    function _initiateOwnerVerifiticationOrImpl(LoanAgent agent) internal {
+        isStatusExpired(agent.currentStatusTimestamp());
+        if (agent.nodeClaimedOwner() != address(agent)) {
+            // Begin WaitingForOwnerChange
+            _updateNodeStatus(address(agent), LoanAgent.NodeStatus.WaitingForOwnerChange);
+            return;
+        }
+        _initiateOracleVerificationOrImpl(agent);
+    }
+
+    function _initiateOracleVerificationOrImpl(LoanAgent agent) internal {
+        isStatusExpired(agent.currentStatusTimestamp());
+        (,,address nodeOracle) = agent.addressInfo();
+        if (!Oracle(oracle).isRegisterdOracle(nodeOracle)) {
+            // Begin Oracle Verification
+            _updateNodeStatus(address(agent), LoanAgent.NodeStatus.WaitingForOracleVerification);
+            // Publish challenge for oracle to respond
+            return;
+        }
+        // Begin sector pledging
+    }
+
+    // function _initiateSectorPledgingOrImpl(LoanAgent agent) internal {
+    //     isStatusExpired(agent.currentStatusTimestamp());
+
+    // }
+
+
+    function submitOwnerChangeConfirmation(address agent) external onlyOracle {
+        require(acceptedInActiveAgents.contains(agent), "LoanAgent is not in waiting");
+        LoanAgent agentInstance = LoanAgent(agent);
+        require(agentInstance.status() == LoanAgent.NodeStatus.WaitingForOwnerChange, 
+            "Not waiting for owner change");
+        require(agentInstance.nodeClaimedOwner() == address(agent), "Miner owner not updated");
+        _initiateOracleVerificationOrImpl(agentInstance);
+    }
+
+
+    function submitOracleVerification(address agent) external onlyOracle {
+        require(acceptedInActiveAgents.contains(agent), "LoanAgent is not in waiting");
+        LoanAgent agentInstance = LoanAgent(agent);
+        require(agentInstance.status() == LoanAgent.NodeStatus.WaitingForOracleVerification, 
+            "Not waiting for oracle verification");
+        (,,address nodeOracle) = agentInstance.addressInfo();
+        require(Oracle(oracle).isRegisterdOracle(nodeOracle), "Oracle is not verified");
+    }
+
+
+
+
+
+
+    function acceptAgentInQueue(address agent) external onlyOracle {
+        require(agentsInQueue.contains(agent), "LoanAgent not in queue");
+        agentsInQueue.remove(agent);
+        acceptedInActiveAgents.add(agent);
+        LoanAgent agentInstance = LoanAgent(agent);
+        _initiateOwnerVerifiticationOrImpl(agentInstance);
     }
 }

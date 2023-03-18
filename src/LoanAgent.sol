@@ -10,6 +10,13 @@ contract LoanAgent {
 
     AddressInfo public addressInfo;
 
+    // The owner address registered with the miner
+    // In the begining the realOwner will be the miner's claimed owner
+    // but it has to change from realOwner to LoanAgent address.
+    // This variable will be updated After WaitingForOwnerChange, and the reason
+    // to implement this variable is the MinerAPI returns bytes form f410 address which is dirty to handle.
+    address public nodeClaimedOwner;
+
     struct LoanAgentInfo {
         uint256 nodeOwnerStakes;
         uint256 usersStakes;
@@ -25,7 +32,7 @@ contract LoanAgent {
     // Amount that the miner has returned to protocol till now
     /// updated by withdrawBalance function
     // if totalReturnedAmount == expectedReturnAmount (changeOwner of the miner and terminate the stakepool)
-    uint256 totalReturnedAmount;
+    uint256 public totalReturnedAmount;
 
     LoanAgentInfo public loanAgentInfo;
 
@@ -36,18 +43,21 @@ contract LoanAgent {
     // checkpoint => miner share
     mapping(uint256 => uint256) ownerWithrawableAmount;
     // total amount of miner share accummulated
-    uint256 totalOwnerCredit;
-    uint256 lastWithdrawlCheckpoint;
+    uint256 public totalOwnerCredit;
+    uint256 public lastWithdrawlCheckpoint;
 
     enum NodeStatus {
         InQueue,
-        WaitingForPledge,
         WaitingForOwnerChange,
-        WaitingForOracleVerifiction,
+        WaitingForOracleVerification,
+        WaitingForSectorPledging,
         Active,
         Paused,
         Terminated
     }
+
+    // timestamp at which current status was applied
+    uint256 public currentStatusTimestamp;
 
     NodeStatus public status;
 
@@ -65,6 +75,7 @@ contract LoanAgent {
     }
 
     modifier onlyFactory {
+        require(msg.sender == factory, "Not LoanAgentFactory");
         _;
     }
 
@@ -83,8 +94,8 @@ contract LoanAgent {
     // transfer the reward from this contract to LendingVault, Miner, Oracle, respectively
     function distributeReward() external {}
 
-    // Only called by miner address
-    function changeWorker(address newWorkerAddress) external {}
+    // // Only called by miner address
+    // function changeWorker(address newWorkerAddress) external {}
 
     // miner can repay the loan and change the owner to itself, LoanAgent will selfdestruct and transfer the funds to LendingVault
     function repayLoanAndChangeOwner(address ownerAddress) external {}
@@ -103,12 +114,19 @@ contract LoanAgent {
     function getStakeInfo()
         external
         view
-        returns (uint256 nodeOnwerStakes, uint256 usersStakes) {}
+        returns (uint256 nodeOwnerStakes, uint256 usersStakes) {}
 
-    function getNodeOwner() external view returns (address) {}
 
-    // Can only be callled by oracle contract or stakepool factory
-    function updateNodeStatus(NodeStatus status) external {}
+
+    function setNodeClaimedOwner(address _owner) external onlyOracle {
+        nodeClaimedOwner = _owner;
+    }
+
+    // Can only be callled by loan agent factory
+    function updateNodeStatus(NodeStatus _status) external onlyFactory {
+        status = _status;
+        currentStatusTimestamp = block.timestamp;
+    }
 
     function destructStakePool() external onlyFactory {}
 
