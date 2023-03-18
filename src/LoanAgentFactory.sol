@@ -3,7 +3,6 @@ pragma solidity ^0.8.0;
 import "./LoanAgent.sol";
 import "./aFIL.sol";
 import "openzeppelin-contracts/utils/structs/EnumerableSet.sol";
-import "filecoin-solidity/MinerAPI.sol";
 
 contract LoadAgentFactory {
     uint16 public constant ONE_HUNDRED_DENOMINATOR = 100;
