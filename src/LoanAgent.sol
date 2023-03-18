@@ -152,8 +152,8 @@ contract LoanAgent {
 
     function getBalanceInfo()
         external
+        // view // somehow these get functions in MinerAPI is not `view`: https://github.com/Zondax/filecoin-solidity/issues/359
         returns (
-            // view // somehow these get functions in MinerAPI is not `view`
             CommonTypes.BigInt memory availableBalance,
             uint initialPledgeCollateral,
             MinerTypes.GetVestingFundsReturn memory lockedReward
@@ -175,8 +175,8 @@ contract LoanAgent {
 
     function getNodeOwner()
         external
+        // view // somehow these get functions in MinerAPI is not `view`: https://github.com/Zondax/filecoin-solidity/issues/359
         returns (
-            // view // somehow these get functions in MinerAPI is not `view`
             MinerTypes.GetOwnerReturn memory
         )
     {
@@ -211,9 +211,8 @@ contract LoanAgent {
         uint usersShare,
         uint oracleShare
     ) external onlyOracle {
-        CommonTypes.BigInt memory availableBalance = MinerAPI.getAvailableBalance(
-            addressInfo.filActorId
-        );
+        CommonTypes.BigInt memory availableBalance = MinerAPI
+            .getAvailableBalance(addressInfo.filActorId);
         require(
             !availableBalance.neg,
             "availableBalance must be positive to withdraw"
