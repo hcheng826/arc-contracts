@@ -17,7 +17,7 @@ contract Oracle is Ownable {
 
     // mapping(address => bool) public isRegisterdOracle;
     // uint256 public totalRegisterdOracles;
-    uint8 public quorum = 51;
+    uint8 private constant quorum = 51;
 
 
     mapping(bytes32 => uint256) public dataFeedVotes;
@@ -28,10 +28,10 @@ contract Oracle is Ownable {
 
     struct SentinelData {
        uint256 height;
-      uint256 initialPledgeRateFor32GiB;
-      uint256 rawBytesPowerOfProtocol;
-      uint256 availableBalanceOfProtocol;
-      uint256 pledgedCollateralOfProtocol;
+       uint256 initialPledgeRateFor32GiB;
+       uint256 rawBytesPowerOfProtocol;
+       uint256 availableBalanceOfProtocol;
+       uint256 pledgedCollateralOfProtocol;
     }
 
     SentinelData public sentinelData;
@@ -79,22 +79,9 @@ contract Oracle is Ownable {
         _registerOracle(oracle);
     }
 
-    function submit_SentinelData(
-      uint256 height,
-      uint256 initialPledgeRateFor32GiB,
-      uint256 rawBytesPowerOfProtocol,
-      uint256 availableBalanceOfProtocol,
-      uint256 pledgedCollateralOfProtocol
-    ) external onlyOracle {
-        bytes32 nodeSubmissionKey = keccak256(abi.encodePacked("sentinel_data", msg.sender, height));
+    function submitSentinelData(SentinelData calldata data) external onlyOracle {
+        bytes32 nodeSubmissionKey = keccak256(abi.encodePacked("sentinel_data", msg.sender, data.height));
         require(!nodeSubmissions[nodeSubmissionKey], "Already submitted");
-        SentinelData memory data = SentinelData({
-            height: height,
-            initialPledgeRateFor32GiB: initialPledgeRateFor32GiB,
-            rawBytesPowerOfProtocol: rawBytesPowerOfProtocol,
-            availableBalanceOfProtocol: availableBalanceOfProtocol,
-            pledgedCollateralOfProtocol: pledgedCollateralOfProtocol
-        });
         bytes32 executedSubmissionKey = keccak256(abi.encode("sentinel_data", data));
         require(!executedSubmissions[executedSubmissionKey], "Sentinel already updated");
         bytes32 detaFeedVoteKey = keccak256(abi.encode("sentinel_data", data));
@@ -102,7 +89,7 @@ contract Oracle is Ownable {
        
         uint256 voteCount = dataFeedVotes[detaFeedVoteKey] + 1;
         dataFeedVotes[detaFeedVoteKey] = voteCount;
-        emit SentinelDataSubmitted(msg.sender, height, block.number);
+        emit SentinelDataSubmitted(msg.sender, data.height, block.number);
         if (isPassingThresholdVoteCount(voteCount)) {
             executedSubmissions[executedSubmissionKey] = true;
             _updateSentinelData(data);
@@ -117,6 +104,11 @@ contract Oracle is Ownable {
         currentSentinelFeedBlock = block.number;
         emit SentinelDataUpdated(data.height, currentSentinelFeedBlock);
     }
+
+
+    // function submitAcceptedLoanAgents(uint256 height, address[] agents) external onlyOracle {
+        
+    // }
 
 
 
