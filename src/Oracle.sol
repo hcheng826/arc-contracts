@@ -11,12 +11,21 @@ contract Oracle is Ownable {
     event SentinelDataUpdated(uint256 indexed height, uint256 indexed currentHeight);
 
     event OracleAdded(address indexed oracle, uint256 indexed oracleCount);
+    event OracleInvitedForVerification(address indexed oracle, uint256 indexed timestamp);
+    event OracleChallenged(address indexed oracle, uint256 indexed timestamp);
 
     EnumerableSet.AddressSet private oracles;
+    EnumerableSet.AddressSet private oraclesForRegistration;
+    
+    mapping(address => bool) public challengedOracles;
+    mapping(address => uint256) private nonces;
+
 
     // mapping(address => bool) public isRegisterdOracle;
     // uint256 public totalRegisterdOracles;
     uint8 private constant quorum = 51;
+
+    uint256 private constant bytesPer32GiB = 32 * 1024 *1024 * 1024;
 
 
     mapping(bytes32 => uint256) public dataFeedVotes;
@@ -55,6 +64,11 @@ contract Oracle is Ownable {
         _;
     }
 
+    modifier onlyLoanAgentFactory {
+        // TODO: Need to implement this
+        _;
+    }
+
 
     function getThresholdVoteCount() public view returns(uint256) {
         return totalRegisterdOracles() * quorum;
@@ -62,6 +76,15 @@ contract Oracle is Ownable {
 
     function isPassingThresholdVoteCount(uint256 vote) internal view returns(bool) {
         return vote * 100 >= getThresholdVoteCount();
+    }
+
+    function challengeOracle(address oracle) external {
+        challengedOracles[oracle] = true;
+        nonces[oracle] = block.timestamp + nonces[oracle];
+    }
+
+    function verifyOracleForRegistration(address oracle) external onlyLoanAgentFactory {
+
     }
 
     function _registerOracle(address oracle) internal {
@@ -72,6 +95,11 @@ contract Oracle is Ownable {
 
     function getOracles() external view returns(address[] memory) {
         return oracles.values();
+    }
+
+    function getIntialCollateralPrice(uint256 rawBytePower) external view returns(uint256) {
+        uint256 numberOf32GiBSectors = rawBytePower / bytesPer32GiB;
+        return numberOf32GiBSectors * sentinelData.initialPledgeRateFor32GiB;
     }
 
     /// Register oracle on contract owner's command
@@ -110,18 +138,6 @@ contract Oracle is Ownable {
     function submitAverageInterestRate(uint256 height, uint24 _averageInterestRate) external onlyOracle {
         ///TODO: Update average interest rate
     }
-
-
-    // function submitAcceptedLoanAgents(uint256 height, address[] agents) external onlyOracle {
-        
-    // }
-
-
-
-
-    
-
-
 
 
 }
