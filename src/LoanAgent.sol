@@ -12,7 +12,7 @@ contract LoanAgent {
         address miner;
         address realOwner;
         address oracle;
-        CommonTypes.FilActorId filActorId; // does this variable the same as "miner"?
+        CommonTypes.FilActorId filActorId;
     }
 
     struct LoanAgentInfo {
@@ -25,6 +25,7 @@ contract LoanAgent {
         uint expectedReturnAmount;
         uint lastUpdateDebtTimstamp;
         uint24 interestRate;
+        uint8 nodeOwnerStakePercentage;
     }
 
     // TODO: add status modifiers check to different functions
@@ -40,6 +41,7 @@ contract LoanAgent {
 
     AddressInfo public addressInfo;
     NodeStatus public status;
+    uint public currentStatusTimestamp;
     LoanAgentInfo public loanAgentInfo;
 
     /// checkpoint => withdrawnAmount
@@ -54,18 +56,22 @@ contract LoanAgent {
 
     address public immutable factory;
     address public immutable aFil;
+    address public immutable oracleDao;
 
     constructor(
         AddressInfo memory _addressInfo,
         LoanAgentInfo memory _loanAgentInfo,
         address _factory,
-        address _aFil
+        address _aFil,
+        address _oracleDao
     ) {
         addressInfo = _addressInfo;
         loanAgentInfo = _loanAgentInfo;
         factory = _factory;
         aFil = _aFil;
+        oracleDao = _oracleDao;
         status = NodeStatus.InQueue;
+        currentStatusTimestamp = block.timestamp;
     }
 
     modifier onlyFactory() {
@@ -73,19 +79,8 @@ contract LoanAgent {
         _;
     }
 
-    modifier onlyOracle() {
-        require(
-            msg.sender == addressInfo.oracle,
-            "can only be called by oracle"
-        );
-        _;
-    }
-
-    modifier onlyOracleOrFactory() {
-        require(
-            msg.sender == addressInfo.oracle || msg.sender == factory,
-            "can only be called by oracle"
-        );
+    modifier onlyOracleDao() {
+        require(msg.sender == oracleDao, "can only be called by oracle");
         _;
     }
 
@@ -152,7 +147,6 @@ contract LoanAgent {
 
     function getBalanceInfo()
         external
-        // view // somehow these get functions in MinerAPI is not `view`: https://github.com/Zondax/filecoin-solidity/issues/359
         returns (
             CommonTypes.BigInt memory availableBalance,
             uint initialPledgeCollateral,
@@ -175,7 +169,6 @@ contract LoanAgent {
 
     function getNodeOwner()
         external
-        // view // somehow these get functions in MinerAPI is not `view`: https://github.com/Zondax/filecoin-solidity/issues/359
         returns (
             MinerTypes.GetOwnerReturn memory
         )
@@ -184,14 +177,15 @@ contract LoanAgent {
     }
 
     // Can only be callled by oracle contract or loanAgent factory
-    function updateNodeStatus(NodeStatus _status) external onlyOracleOrFactory {
+    function updateNodeStatus(NodeStatus _status) external onlyFactory {
         status = _status;
+        currentStatusTimestamp = block.timestamp;
     }
 
     // Can only be called by oracle contract and before status == NodeStatus.Active
     // get pledged collateral, calculate residual FIL in the wallet after pledging,
     // refund the amounts according to the collateral shares and update nodeOwnerStakes and usersStakes
-    function verifyAndRefundUnpledgedCollateral() external onlyOracle {
+    function verifyAndRefundUnpledgedCollateral() external onlyOracleDao {
         require(
             status != NodeStatus.Active,
             "Can only be called before the node is active"
@@ -210,7 +204,7 @@ contract LoanAgent {
         uint minerShare,
         uint usersShare,
         uint oracleShare
-    ) external onlyOracle {
+    ) external onlyOracleDao {
         CommonTypes.BigInt memory availableBalance = MinerAPI
             .getAvailableBalance(addressInfo.filActorId);
         require(
@@ -259,7 +253,7 @@ contract LoanAgent {
         loanAgentInfo.lastUpdateDebtTimstamp = block.timestamp;
     }
 
-    function updateInterestRate(uint24 _interestRate) external onlyOracle {
+    function updateInterestRate(uint24 _interestRate) external onlyOracleDao {
         accumulateDebt();
         loanAgentInfo.interestRate = _interestRate;
     }

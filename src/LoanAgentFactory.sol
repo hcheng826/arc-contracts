@@ -74,14 +74,16 @@ contract LoadAgentFactory {
             agentCreationTimestamp: block.timestamp,
             expectedReturnAmount: 0, // TODO: Set the expected return amount
             lastUpdateDebtTimstamp: 0,
-            interestRate: 0 // TODO: Set the interest rate
+            interestRate: 0, // TODO: Set the interest rate
+            nodeOwnerStakePercentage: 0 // TODO: Set the percentage
         });
 
         LoanAgent loanAgent = new LoanAgent(
             addressInfo,
             loanAgentInfo,
             address(this),
-            aFil
+            aFil,
+            oracle
         );
 
         require(
