@@ -11,6 +11,10 @@ library Utils {
     // 3 PiB
     uint256 public constant MIN_RAW_BYTE_POWER = 3 * 1024 * 1024 * 1024 * 1024 * 1024;
 
+    function getActorId(address addr) internal view returns(uint64 ) {
+        return PrecompilesAPI.resolveEthAddress(addr);
+    }
+
     function isETHAddressEqualToFILAddress(address ethAddr, 
         CommonTypes.FilAddress memory filAddr) internal view returns(bool) {
             uint64 actorIdFromETH = PrecompilesAPI.resolveEthAddress(ethAddr);
