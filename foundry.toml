@@ -4,7 +4,7 @@ out = 'out'
 test = 'test'
 libs = ['lib']
 
-solc_version = '0.8.13'
+solc_version = '0.8.19'
 
 [fuzz]
 runs = 10000
