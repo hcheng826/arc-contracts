@@ -8,6 +8,7 @@ import "filecoin-solidity/utils/BigInts.sol";
 
 contract LoanAgent {
     uint public constant WEI_DENOMINATOR = 1e18;
+    uint public constant ONE_HUNDRED_DENOMINATOR = 100;
     struct AddressInfo {
         address miner;
         address realOwner;
@@ -80,7 +81,7 @@ contract LoanAgent {
     }
 
     modifier onlyOracleDao() {
-        require(msg.sender == oracleDao, "can only be called by oracle");
+        require(msg.sender == oracleDao, "can only be called by oracle contract");
         _;
     }
 
@@ -169,9 +170,7 @@ contract LoanAgent {
 
     function getNodeOwner()
         external
-        returns (
-            MinerTypes.GetOwnerReturn memory
-        )
+        returns (MinerTypes.GetOwnerReturn memory)
     {
         return MinerAPI.getOwner(addressInfo.filActorId);
     }
@@ -185,12 +184,35 @@ contract LoanAgent {
     // Can only be called by oracle contract and before status == NodeStatus.Active
     // get pledged collateral, calculate residual FIL in the wallet after pledging,
     // refund the amounts according to the collateral shares and update nodeOwnerStakes and usersStakes
-    function verifyAndRefundUnpledgedCollateral() external onlyOracleDao {
+    function verifyAndRefundUnpledgedCollateral(
+        uint initialPlegeCollateral
+    ) external onlyOracleDao {
         require(
             status != NodeStatus.Active,
             "Can only be called before the node is active"
         );
-        // TODO: implementation
+        uint256 currentPledgeCollateral = loanAgentInfo.nodeOwnerStakes +
+            loanAgentInfo.usersStakes;
+
+        if (initialPlegeCollateral < currentPledgeCollateral) {
+            uint256 unpledgedCollateral = currentPledgeCollateral -
+                initialPlegeCollateral;
+            uint256 nodeOwnerRefund = (unpledgedCollateral *
+                loanAgentInfo.nodeOwnerStakePercentage) / ONE_HUNDRED_DENOMINATOR;
+            uint256 usersRefund = unpledgedCollateral - nodeOwnerRefund;
+
+            loanAgentInfo.nodeOwnerStakes -= nodeOwnerRefund;
+            loanAgentInfo.usersStakes -= usersRefund;
+
+            require(
+                payable(addressInfo.realOwner).send(nodeOwnerRefund),
+                "Fail to refund unpledged collateral to node owner"
+            );
+            require(
+                payable(aFil).send(usersRefund),
+                "Fail to refund unpledged collateral to users"
+            );
+        }
     }
 
     // Withdraw earnings from the available balance
@@ -205,14 +227,43 @@ contract LoanAgent {
         uint usersShare,
         uint oracleShare
     ) external onlyOracleDao {
-        CommonTypes.BigInt memory availableBalance = MinerAPI
-            .getAvailableBalance(addressInfo.filActorId);
-        require(
-            !availableBalance.neg,
-            "availableBalance must be positive to withdraw"
+        (uint availableBalance, bool _neg) = BigInts.toUint256(
+            MinerAPI.getAvailableBalance(addressInfo.filActorId)
         );
-        MinerAPI.withdrawBalance(addressInfo.filActorId, availableBalance);
-        // TODO: implementation
+        uint amount = minerShare + usersShare + oracleShare;
+        uint lastAvailableBalance = availableBalanceHistory[
+            lastWithdrawlCheckpoint
+        ];
+
+        require(
+            amount <= availableBalance - lastAvailableBalance,
+            "Total earnings exceed available balance"
+        );
+
+        // Check if timeCommitment is crossed and expectedTotal return is yet not procured
+        if (
+            block.timestamp > loanAgentInfo.agentExpectedExpiry &&
+            loanAgentInfo.expectedReturnAmount < loanAgentInfo.usersStakes
+        ) {
+            uint extraUsersShare = (minerShare * 80) / ONE_HUNDRED_DENOMINATOR;
+            minerShare -= extraUsersShare;
+            usersShare += extraUsersShare;
+        }
+
+        totalOwnerCredit += minerShare;
+
+        require(
+            payable(aFil).send(usersShare),
+            "Fail to send usersShare to aFIL"
+        );
+        require(
+            payable(oracleDao).send(oracleShare),
+            "Fail to send oracleShare to Oracle DAO"
+        );
+
+        availableBalanceHistory[checkpoint] = availableBalance - amount;
+        withdrawHistory[checkpoint] = usersShare + oracleShare;
+        lastWithdrawlCheckpoint = checkpoint;
     }
 
     // The amount that realOwner can withdraw anytime.
